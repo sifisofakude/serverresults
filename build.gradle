@@ -1,0 +1,9 @@
+subprojects	{
+	def args = [
+		"-Xlint:deprecation"
+	]
+
+	tasks.withType(JavaCompile).configureEach	{
+		options.compilerArgs.addAll(args)
+	}
+}
