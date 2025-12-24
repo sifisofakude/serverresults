@@ -81,7 +81,7 @@ public final class ServerResults {
    */
   public static synchronized OkHttpClient getUnsafeClient()  {
     if(unsafeClient == null)  {
-      unsafeClient = SSL.createUnsafeClient();
+      unsafeClient = SSLUtil.createUnsafeClient();
       if(unsafeClient == null)  {
         throw new IllegalStateException("Unsafe client could not be created.");
       }

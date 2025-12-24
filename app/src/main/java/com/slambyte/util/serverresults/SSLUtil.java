@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 public final class SSLUtil	{
 	private SSLUtil() {}
 
-	public static OkHttpClient getCreateClient()	{
+	public static OkHttpClient createUnsafeClient()	{
 		try	{
 			// Create a trust manager that does not validate certificate chains
 			TrustManager[] trustAllCerts = new TrustManager[]	{
