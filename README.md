@@ -1,25 +1,40 @@
 # ServerResults
 
-ServerResults is a lightweight, immutable wrapper around OkHttp
- that simplifies blocking HTTP requests. It captures success or failure in a single object, exposing response code, body, headers, and error messages without forcing callers to handle exceptions.
+**ServerResults** is a lightweight Java utility that wraps **OkHttp** and executes **blocking HTTP requests**,
+capturing the result (success or failure) in a single immutable object.
+
+It is designed for developers who want:
+
+* Simple synchronous HTTP calls
+* No checked exceptions
+* Clear success vs networkfailure handling
+* Full control over threading
 
 ---
 
 ## Features
 
-* Simple API: `getServerResults()` and `getServerResultsUnsafe()`
+* Simple blocking HTTP API
+* No checked exeptions
+* Immutable result object
+* HTTP status code + response body access
+* Network error detection
+* Optional SSL certificate pinning
+* Android & JVM compatible
+* PlayStore compliant
 
-* Fully blocking requests (threading warning: do not call on Android main/UI thread)
+---
 
-* Built-in handling for network, SSL, and IO errors
+## Important: Blocking calls
 
-* Optional headers and request body support for GET, POST, PUT, PATCH, DELETE
+All **ServerResults** request methods perform blocking network operations.
 
-* Access to response headers
+You must not call them on:
 
-* Advanced user support: retrieve the `OkHttpClient` and customize via `.newBuilder()`
+* Android main/UI thread
+* Perfomance-critical threads
 
-* Convenience helpers: `isSuccess()` and `isNetworkError()`
+Threading is intentionally left to the user so the library remains flexible and framework-agnostic.
 
 ---
 
@@ -58,60 +73,94 @@ if (result.isNetworkError()) {
 ```
 ---
 
-### POST request with headers
-```java
-Map<String, String> headers = new HashMap<>();
-headers.put("Authorization", "Bearer <token>");
-headers.put("Content-Type", "application/json");
+## Response Handling
 
-String jsonData = "{\"name\":\"John\"}";
+### Success
 
-ServerResults result = ServerResults.getServerResults(
-        "https://api.example.com/create",
-        jsonData,
-        "POST",
-        headers
-);
-```
+* `isSuccess()` returns `true`
+* `getResponseCode()` returns HTTP status code
+* `getResponseText()` contains the response body
+
+### Network/IO Error
+
+* `isNetworkError()` returns `true`
+* `getResponseCode()` returns `-1`
+* `getExceptionMessage()` contains the error description
+
 ---
 
-### Unsafe request (SSL verification disabled)
+## SSL & Security
 
-⚠️ Use only for testing or trusted internal servers. Vulnerable to man-in-the-middle attacks.
+### Removed Unsafe APIs
 
-```java
-ServerResults unsafeResult = ServerResults.getServerResultsUnsafe(
-        "https://self-signed.example.com",
-        null,
-        "GET",
-        null
-);
-```
+The following methods where **removed**:
+
+* `getServerResultsUnsafe(...)`
+* `getUnsafeClient(...)`
+
+**Why?**
+
+* They disabled SSL verification entirely
+* Their presence in compiled APKs  can cause **Google PlayStore rejection**
+* Even unused unsafe SSL code may trigger security scans
+
 ---
 
-### Advanced: custom OkHttp client
-```java
-OkHttpClient client = ServerResults.getSafeClient()
-        .newBuilder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .build();
+## Recommended: Certificate pinning
 
-ServerResults result = ServerResults.getServerResults(
-        client,
-        "https://api.example.com/data",
-        null,
-        "GET",
-        null
+ServerResults now supports **certificate-pinned OkHttp clients**, which are:
+
+* Secure
+* Production-ready
+* PlayStore compliant
+
+### Initializing a pinned client
+```java
+OkHttpClient client = ServerResults.getPinnedClient(
+    "/path/to/certificate.pem",
+    "api.example.com"
 );
 ```
+
+Once initialized, you can reuse it:
+```java
+OkHttpClient client = ServerResults.getPinnedClient();
+```
+if the pinned client is accessed before initialization,an `IllegalException` is thrown.
+
+---
+
+### OkHttp configuration
+
+Advanced users can  customize the client
+
+```java
+OkHttpClient client = ServerResults.getPinnedClient()
+    .newBuilder()
+    .callTimeout(10,TimeUnit.SECONDS)
+    .build();
+```
+
+ServerResults does not hide OkHttp - it embraces it.
+
+---
+
+## Thread Safety
+
+* `ServerResults` itself is stateless and thread-safe
+* OkHttp clients are shared and safe to reuse
+* Thread management is the responsibility of the caller
+
+---
 
 ### API
 | **Method** |	**Description** |
 |------------|------------------|
-| `getServerResults(String url, String data, String method)` |	Sends a blocking HTTP request using the secure client|
+| `getSafeClient()` |	Returns `OkHttpClient` |
+| `getPinnedClient()` |   Returns previously initialized `OkHttpClient` with custom certificate |
+| `getServerResults(String url, String data, String method)` |  Sends a blocking HTTP request using the secure client|
 | `getServerResults(String url, String data, String method, Map<String,String> headers)`  |	Sends a blocking HTTP request with headers |
 | `getServerResults(OkHttpClient client, String url, String data, String method, Map<String,String> headers)` |	Uses a custom client |
-| `getServerResultsUnsafe(String url, String data, String method, Map<String,String> headers)` |	Sends request with SSL verification disabled (unsafe) |
 | `getResponseCode()` |	Returns HTTP status code or -1 for network/IO errors |
 | `getResponseText()` |	Returns response body or error message |
 | `getExceptionMessage()` |	Returns underlying exception message if a failure occurred |
@@ -137,11 +186,29 @@ All methods perform blocking network calls. Do not call on Android main/UI threa
 
 ---
 
-## Security
+## Versioning & Compatibility
 
-* `getServerResults()` uses a standard OkHttp client with full SSL verification.
+**Unsafe SSL APIs have been permanently removed**
 
-* `getServerResultsUnsafe()` disables SSL certificate and hostname verification — use with caution.
+  * `getServerResultsUnsafe(...)`
+
+  * `getUnsafeClient()`
+
+* This change **introduces a breaking API change** and is released as v2.0.0
+
+* **v1.x is depracated** and should not be used for new projects
+
+**Starting from v2.0.0, ServerResults:**
+  
+  * Does not include any unsafe SSL code
+
+  * Is **Google PlayStore compliant**
+
+  * Uses **certificate pinning** as the only SSL customization mechanism
+
+* Application that relied on unsafe SSL  behavior **must migrate** to pinned certificates befor upgrading
+
+Refer to `CHANGELOG.md` for the full list of changes
 
 ---
 

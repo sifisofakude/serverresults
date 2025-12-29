@@ -2,8 +2,13 @@ package com.slambyte.util.serverresults;
 
 import okhttp3.*;
 import javax.net.ssl.*;
+
+import java.security.KeyStore;
+import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
-import java.util.concurrent.TimeUnit;
+import java.security.cert.CertificateFactory;
+
+import java.io.InputStream;
 
 /**
  * Internal utility class to provide an OkHttpClient instance that disables SSL certificate
@@ -12,35 +17,33 @@ import java.util.concurrent.TimeUnit;
 public final class SSLUtil	{
 	private SSLUtil() {}
 
-	public static OkHttpClient createUnsafeClient()	{
-		try	{
-			// Create a trust manager that does not validate certificate chains
-			TrustManager[] trustAllCerts = new TrustManager[]	{
-				new X509TrustManager()	{
-					public X509Certificate[] getAcceptedIssuers()	{
-						return new X509Certificate[]{}	;
-					}
+	public static OkHttpClient createPinnedClient(InputStream certInputStream, String trustedHostname) throws Exception	{
+		CertificateFactory cf = CertificateFactory.getInstance("X.509");
+		Certificate cert = cf.generateCertificate(certInputStream);
 
-					public void checkClientTrusted(X509Certificate[] certs,String authType)	{}
+		KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+		keyStore.load(null,null);
+		keyStore.setCertificateEntry("ca", cert);
 
-					public void checkServerTrusted(X509Certificate[] certs,String authType)	{}
-				}
-			};
+		TrustManagerFactory tmf = TrustManagerFactory.getInstance(
+			TrustManagerFactory.getDefaultAlgorithm()
+		);
 
-			// Install the all-trusting trust manager
-			final SSLContext sslContext = SSLContext.getInstance("TSL");
-			sslContext.init(null,trustAllCerts, new java.security.SecureRandom());
+		tmf.init(keyStore);
 
-			// Create an ssl socket factory with our all-trusting manager
-			final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+		// Install the trust manager
+		final SSLContext sslContext = SSLContext.getInstance("TLS");
+		sslContext.init(null,tmf.getTrustManagers(), new java.security.SecureRandom());
 
-			OkHttpClient.Builder builder = new OkHttpClient.Builder();
-			builder.sslSocketFactory(sslSocketFactory,(X509TrustManager) trustAllCerts[0]);
-			builder.hostnameVerifier((hostname, session) -> true);
+		X509TrustManager trustManager = (X509TrustManager) tmf.getTrustManagers()[0];
 
-			return builder.build();
-		}catch(Exception e)	{
-			return null;
-		}
+		// Create an ssl socket factory with our all-trusting manager
+		final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+		OkHttpClient.Builder builder = new OkHttpClient.Builder();
+		builder.sslSocketFactory(sslSocketFactory,trustManager);
+		builder.hostnameVerifier((hostname, session) -> trustedHostname.equals(hostname));
+
+		return builder.build();
 	}
 }

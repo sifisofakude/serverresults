@@ -39,13 +39,15 @@ java {
   }
 }
 
-// compileJava  {
-
-// }
+version = "v2.0.0"
 
 application {
   // Define the main class for the application.
-  mainClass = 'com.slambyte.util.serverresults.App'
+  // mainClass = 'com.slambyte.util.serverresults.Main'
+}
+
+jar   {
+  archiveBaseName = "serverresults"
 }
 
 tasks.named('test') {

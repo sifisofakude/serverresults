@@ -2,27 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and
-this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] - 2025-12-24
+---
+
+## [2.0.0] – 2025-12-26
+
+### Breaking Changes
+- Removed **all unsafe SSL APIs**:
+  - `getServerResultsUnsafe(...)`
+  - `getUnsafeClient()` (no-args variant)
+- Removed automatic creation of unsafe SSL clients
+
+###  Security
+- Introduced **certificate pinning** as the only supported SSL customization
+- Ensures **Google Play Store compliance**
+- Prevents accidental inclusion of unsafe SSL code in compiled APKs
+
 ### Added
-- Initial release of `ServerResults` library
-- Blocking HTTP requests using OkHttp
-- Support for GET, POST, PUT, PATCH, DELETE methods
-- Optional request headers and request body
-- Safe SSL client for secure connections
-- Unsafe SSL client for testing or internal servers
-- `isSuccess()` and `isNetworkError()` helper methods
-- Access to response code, body, headers, and exception messages
-- Kotlin-compatible API
-- Comprehensive Javadoc-style documentation
+- `SSLUtil.createUnsafeClient(InputStream certificate, String hostname)`
+  - Allows secure, pinned SSL connections to trusted servers
+- Lazy initialization of custom OkHttpClient instances
+- Clear failure behavior when unsafe client is not explicitly initialized
 
-### Changed
-- N/A
+### Improved
+- Cleaner API surface with fewer foot-guns
+- Clear separation between:
+  - Safe default networking
+  - Advanced user-controlled networking via `OkHttpClient`
 
-### Fixed
-- N/A
+### Deprecated
+- **v1.x is deprecated** and should not be used for new projects
 
-### Removed
-- N/A
+---
+
+## [1.0.0] – Initial Release - 2025-12-24
+
+### Features
+- Blocking HTTP wrapper around OkHttp
+- Unified `ServerResults` response object
+- No checked exceptions exposed to callers
+- Support for GET, POST, PUT, PATCH, DELETE
+- Optional headers
+- Response body, headers, and status code access
+- Unsafe SSL support (removed in v2.0.0)
+
+---
+
