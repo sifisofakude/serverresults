@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [2.0.0] – 2025-12-26
+## [2.0.0] – 2025-12-29
 
 ### Breaking Changes
 - Removed **all unsafe SSL APIs**:
