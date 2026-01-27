@@ -116,7 +116,7 @@ ServerResults now supports **certificate-pinned OkHttp clients**, which are:
 
 ### Initializing a pinned client
 ```java
-OkHttpClient client = ServerResults.getPinnedClient(
+OkHttpClient client = ServerResults.createPinnedClient(
     "/path/to/certificate.pem",
     "api.example.com"
 );
