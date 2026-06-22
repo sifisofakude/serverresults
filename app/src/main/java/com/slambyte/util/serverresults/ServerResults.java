@@ -4,14 +4,20 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.List;
 
+import java.io.OutputStream;
 import java.io.InputStream;
 import java.io.FileInputStream;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
+import okhttp3.MultipartBody;
 import okhttp3.MediaType;
 import okhttp3.Response;
+
+import okio.BufferedSink;
+import okio.Okio;
+import okio.Source;
 
 /**
  * ServerResults is a lightweight OkHttp wrapper class that executes blocking HTTP request
@@ -41,16 +47,22 @@ public final class ServerResults {
   private static OkHttpClient safeClient;
   private static OkHttpClient pinnedClient;
 
-  private final int responseCode;
-  private final String responseText;
-  private final String exceptionMsg;
-  private final Map<String, List<String>> responseHeaders;
+  private String responseText = null;
+  
+  private int responseCode = -1;
+  private String exceptionMsg = null;
+  private Response response = null;
+  private Map<String, List<String>> responseHeaders = null;
 
-  private ServerResults(int code, String text, String exceptionMsg,Map<String, List<String>> responseHeaders) {
+  private ServerResults(int code, Response response, String exceptionMsg) {
     this.responseCode = code;
-    this.responseText = text;
+    this.response = response;
     this.exceptionMsg = exceptionMsg;
-    this.responseHeaders = responseHeaders;
+
+    if(response != null)	{
+    	this.responseHeaders = response.headers()
+    		.toMultimap();
+    }
   }
 
   /**
@@ -71,28 +83,41 @@ public final class ServerResults {
 
   
   /**
-   * Initializes a pinned SSL OkHttpClient that trusts only the specified certificate and hostname.
+   * Initializes a pinned SSL OkHttpClient using a certificate file.
    *
-   * <p>This method must be called before any attempt to retrieve the pinned client via
-   * {@link #getPinnedClient()}. The provided hostname should not include the protocol
-   * (e.g., "example.com" instead of "https://example.com").</p>
+   * <p>This method is deprecated in favor of
+   * {@link #createPinnedClient(InputStream, String)} because file paths are
+   * not universally available across all platforms and environments,
+   * particularly on Android when using assets, resources, or SAF URIs.</p>
    *
-   * <p>The returned OkHttpClient is safe for production and Play Store distribution since
-   * it performs certificate pinning and hostname verification.</p>
+   * @param certificate path to the PEM/X.509 certificate file
+   * @param hostname trusted server hostname
    *
-   * <p>Subsequent calls to this method will have no effect if the pinned client is already
-   * initialized.</p>
-   *
-   * @param certificate path to the PEM/X.509 certificate file to pin
-   * @param hostname trusted server hostname (without protocol)
-   * @throws IllegalStateException if the pinned client cannot be initialized
+   * @deprecated Use {@link #createPinnedClient(InputStream, String)} instead.
    */
-  public static synchronized void createPinnedClient(String certificate, String hostname)  {
+  @Deprecated
+  public static synchronized void createPinnedClient(
+  	String certificate, 
+  	String hostname
+  )  {
     if(pinnedClient == null)  {
       try(InputStream certStream = new FileInputStream(certificate))   {
         hostname = hostname.replaceAll("^[a-zA-Z]+://","");
-        System.out.println(hostname);
         pinnedClient = SSLUtil.createPinnedClient(certStream,hostname);
+      }catch(Exception e) {
+        throw new IllegalStateException("Failed to initialize pinned SSL client",e);
+      }
+    }
+  }
+  
+  public static synchronized void createPinnedClient(
+  	InputStream certificate, 
+  	String hostname
+  )  {
+    if(pinnedClient == null)  {
+      try	{
+        hostname = hostname.replaceAll("^[a-zA-Z]+://","");
+        pinnedClient = SSLUtil.createPinnedClient(certificate,hostname);
       }catch(Exception e) {
         throw new IllegalStateException("Failed to initialize pinned SSL client",e);
       }
@@ -129,8 +154,40 @@ public final class ServerResults {
    *
    * @return a ServerResults instance containing either the response or an error
    */
-  public static ServerResults getServerResults(String url, String data, String method) {
-    return getServerResults(url, data, method, null, null);
+  public static ServerResults getServerResults(
+  	String url, 
+  	String data, 
+  	String method
+  ) {
+    return executeRequest(getSafeClient(),url, data, method, null, null);
+  }
+
+  /**
+   * Creates and executes a multipart file upload request using the shared secure client.
+   *
+   * <p>The supplied file is streamed directly to the server without loading the
+   * entire file into memory. The request is sent as
+   * {@code multipart/form-data} with a single form field named {@code file}.</p>
+   *
+   * <p>If the file cannot be read, does not exist, or does not contain a valid
+   * file name, a {@link ServerResults} instance with response code {@code -1}
+   * is returned.</p>
+   *
+   * @param url target URL
+   * @param file file descriptor containing the file name, size, and input stream
+   * @param method HTTP method to use, typically {@code POST}
+   *
+   * @return a {@link ServerResults} instance containing the server response or
+   *         an error description
+   *
+   * @implNote This method performs a blocking network operation.
+   */
+  public static ServerResults getServerResults(
+  	String url, 
+  	FileUpload file, 
+  	String method
+  ) {
+    return getServerResults(url, file, method, null, null);
   }
 
   /**
@@ -148,8 +205,39 @@ public final class ServerResults {
    * @implNote This method performs blocking network operation.
    * 
    */
-  public static ServerResults getServerResults(String url, String data, String method,Map<String,String> headers) {
+  public static ServerResults getServerResults(
+  	String url, 
+  	String data, 
+  	String method,
+  	Map<String,String> headers
+  ) {
     return executeRequest(getSafeClient(),url,data,method,headers, null);
+  }
+
+  /**
+   * Creates and executes a multipart file upload request using the shared secure client.
+   *
+   * <p>The supplied file is streamed directly to the server using
+   * {@code multipart/form-data}. Request headers may be supplied to support
+   * authentication, API keys, or custom server requirements.</p>
+   *
+   * @param url target URL
+   * @param file file descriptor containing the file name, size, and input stream
+   * @param method HTTP method to use, typically {@code POST}
+   * @param headers optional request headers, may be {@code null}
+   *
+   * @return a {@link ServerResults} instance containing the server response or
+   *         an error description
+   *
+   * @implNote This method performs a blocking network operation.
+   */
+  public static ServerResults getServerResults(
+  	String url, 
+  	FileUpload file, 
+  	String method,
+  	Map<String,String> headers
+  ) {
+    return getServerResults(url,file,method,headers, null);
   }
 
   /**
@@ -166,7 +254,13 @@ public final class ServerResults {
    *
    * @implNote This is a blocking network call. Do not call on Android main/UI thread.
    */
-  public static ServerResults getServerResults(String url, String data, String method,Map<String,String> headers, MediaType type) {
+  public static ServerResults getServerResults(
+  	String url, 
+  	String data, 
+  	String method,
+  	Map<String,String> headers, 
+  	MediaType type
+  ) {
     return executeRequest(getSafeClient(),url,data,method,headers, type);
   }
 
@@ -189,9 +283,25 @@ public final class ServerResults {
    * @return a ServerResults instance containing either the response or an error
    *
    */
-  public static ServerResults getServerResults(OkHttpClient client,String url, String data, String method,Map<String,String> headers) {
+  public static ServerResults getServerResults(
+  	OkHttpClient client,
+  	String url, 
+  	String data, 
+  	String method,
+  	Map<String,String> headers
+  ) {
     return executeRequest(client,url,data,method,headers, null);
   }
+  
+  // public static ServerResults getServerResults(
+  // 	OkHttpClient client,
+  // 	String url, 
+  // 	RequestBody requestBody, 
+  // 	String method,
+  // 	Map<String,String> headers
+  // ) {
+  //   return executeRequest(client,url,requestBody,method,headers, null);
+  // }
 
   /**
    * Executes an HTTP request using a user-provided OkHttpClient with optional headers and content type.
@@ -210,8 +320,87 @@ public final class ServerResults {
    *
    * @implNote Blocking network call. Do not invoke on main/UI thread.
    */
-  public static ServerResults getServerResults(OkHttpClient client,String url, String data, String method,Map<String,String> headers, MediaType type) {
+  public static ServerResults getServerResults(
+  	OkHttpClient client,
+  	String url, 
+  	String data, 
+  	String method,
+  	Map<String,String> headers, 
+  	MediaType type
+  ) {
     return executeRequest(client,url,data,method,headers, type);
+  }
+
+	/**
+	 * Creates and executes a multipart file upload request using the shared secure client.
+	 *
+	 * <p>The file is transmitted using {@code multipart/form-data} and streamed
+	 * directly from the provided input stream.</p>
+	 *
+	 * <p>The supplied content type parameter is currently ignored for the uploaded
+	 * file body, which is sent as {@code application/octet-stream}.</p>
+	 *
+	 * @param url target URL
+	 * @param file file descriptor containing the file name, size, and input stream
+	 * @param method HTTP method to use, typically {@code POST}
+	 * @param headers optional request headers, may be {@code null}
+	 * @param type optional content type parameter
+	 *
+	 * @return a {@link ServerResults} instance containing the server response or
+	 *         an error description
+	 *
+	 * @implNote This method performs a blocking network operation.
+	 */
+  public static ServerResults getServerResults(
+  	String url,
+  	FileUpload file, 
+  	String method,
+  	Map<String,String> headers, 
+  	MediaType type
+  ) {
+  	String errorMessage = null;
+  	if(file == null)	{
+  		errorMessage = "Could not find file to upload";
+  	}
+
+  	if(file != null && file.getFileName() == null && errorMessage == null)	{
+  		errorMessage = "File name not provided";
+  	}
+
+  	if(file != null && file.getInputStream() == null && errorMessage == null)	{
+  		errorMessage = "Unreadable file";
+  	}
+
+  	if(errorMessage != null)	{
+  		return new ServerResults(-1,null,errorMessage);
+  	}
+
+  	RequestBody streamBody = new RequestBody()	{
+  		@Override
+  		public MediaType contentType()	{
+  			return type;
+  		}
+  		
+
+  		@Override
+  		public long contentLength()	{
+  			return file.getFileSize();
+  		}
+
+  		@Override
+  		public void writeTo(BufferedSink sink) throws IOException	{
+  			try(Source source = Okio.source(file.getInputStream()))	{
+  				sink.writeAll(source);
+  			}
+  		}
+  	};
+
+  	RequestBody requestBody = new MultipartBody.Builder()
+  		.setType(MultipartBody.FORM)
+  		.addFormDataPart("file",file.getFileName(),streamBody)
+  		.build();
+  		
+    return executeRequest(getSafeClient(),url,requestBody,method,headers,type);
   }
 
   /**
@@ -229,7 +418,11 @@ public final class ServerResults {
    *
    * @implNote Blocking network call. Do not call on main/UI thread.
    */
-  public static ServerResults getPinnedServerResults(String url, String data, String method,Map<String,String> headers) {
+  public static ServerResults getPinnedServerResults(
+  	String url, String data, 
+  	String method,
+  	Map<String,String> headers
+  ) {
     return executeRequest(getPinnedClient(),url,data,method,headers, null);
   }
 
@@ -247,7 +440,13 @@ public final class ServerResults {
    *
    * @implNote Blocking network call. Do not call on main/UI thread.
    */
-  public static ServerResults getPinnedServerResults(String url, String data, String method,Map<String,String> headers, MediaType type) {
+  public static ServerResults getPinnedServerResults(
+  	String url, 
+  	String data, 
+  	String method,
+  	Map<String,String> headers, 
+  	MediaType type
+  ) {
     return executeRequest(getPinnedClient(),url,data,method,headers, type);
   }
 
@@ -285,7 +484,14 @@ public final class ServerResults {
    * @param headers Optional request headers (may be null)
    * @return A ServerResults instance containing response code, response body, and exception message if applicable
    */
-  private static ServerResults executeRequest(OkHttpClient client,String url,String data,String method,Map<String, String> headers,MediaType mediaType) {
+  private static ServerResults executeRequest(
+  	OkHttpClient client,
+  	String url,
+  	String data,
+  	String method,
+  	Map<String, String> headers,
+  	MediaType mediaType
+  ) {
     try {
       Request.Builder builder = new Request.Builder().url(url);
 
@@ -317,6 +523,10 @@ public final class ServerResults {
           else builder.delete();
           break;
 
+        case "HEAD":
+        	builder.head();
+        	break;
+
         case "GET":
         default:
           builder.get();
@@ -325,8 +535,9 @@ public final class ServerResults {
 
       // Add headers
       if (headers != null) {
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
-          builder.addHeader(entry.getKey(), entry.getValue());
+        for (Object key : headers.keySet()) {
+        	String value = headers.get(key);
+          builder.addHeader((String) key, value);
         }
       }
 
@@ -334,15 +545,65 @@ public final class ServerResults {
       Request request = builder.build();
 
       // Execute synchronously (blocking)
-      try (Response response = client.newCall(request).execute()) {
-        String body = response.body() != null ? response.body().string() : null;
-        Map<String, List<String>> responseHeaders = response.headers().toMultimap();
+      Response response = client.newCall(request).execute();
 
-        return new ServerResults(response.code(),body,null,responseHeaders);
-      }
+      return new ServerResults(response.code(),response,null);
 
     } catch (Exception ex) {
-      return new ServerResults(-1,null,ex.toString(),null);
+      return new ServerResults(-1,null,ex.toString());
+    }
+  }
+
+  
+  private static ServerResults executeRequest(
+  	OkHttpClient client,
+  	String url,
+  	RequestBody requestBody,
+  	String method,
+  	Map<String, String> headers,
+  	MediaType mediaType
+  ) {
+    try {
+      Request.Builder builder = new Request.Builder().url(url);
+
+      if(method == null) method = "POST";
+
+      switch (method.toUpperCase()) {
+        case "PUT":
+          builder.put(requestBody != null ? requestBody : emptyBody());
+          break;
+
+        case "PATCH":
+          builder.patch(requestBody != null ? requestBody : emptyBody());
+          break;
+
+        case "POST":
+        default:
+          builder.post(requestBody != null ? requestBody : emptyBody());
+      }
+
+      // Add headers
+      if (headers != null) {
+        for (Object rawEntry : headers.entrySet()) {
+        	if(rawEntry instanceof Map.Entry)	{
+	        	Map.Entry<String, String> entry = (Map.Entry<String,String>) 
+	        		rawEntry;
+	        		
+	          builder.addHeader(entry.getKey(), entry.getValue());
+          }
+        }
+      }
+
+      // Build request
+      Request request = builder.build();
+
+      // Execute synchronously (blocking)
+      Response response = client.newCall(request).execute();
+
+      return new ServerResults(response.code(),response,null);
+
+    } catch (Exception ex) {
+      return new ServerResults(-1,null,ex.toString());
     }
   }
 
@@ -358,6 +619,21 @@ public final class ServerResults {
   public int getResponseCode() { return responseCode; }
 
   /**
+   * Returns the raw OkHttp {@link Response} object associated with this request.
+   *
+   * <p>This method may return {@code null} if the request failed before a
+   * response was received.</p>
+   *
+   * <p>Advanced users can access response metadata not exposed by
+   * {@link ServerResults}.</p>
+   *
+   * @return underlying OkHttp response or {@code null}
+   */
+  public Response getResponse()	{
+  	return response;
+  }
+
+  /**
    * Returns the response text
    * 
    * <ul>
@@ -367,7 +643,56 @@ public final class ServerResults {
    * 
    * @return response body or error message or {@code null} if an exception occurred.
    */
-  public String getResponseText() { return responseText; }
+  public String getResponseText() {
+  	if(responseText == null && response != null)	{
+  		if(responseCode == 200)	{
+  			if(response.body() != null)	{
+  				try	{
+  					responseText = response.body().string();
+  				}catch(Exception e) {}
+  			}
+  		}
+			response.close();
+			response = null;
+  	}
+		
+  	return responseText;
+  }
+
+	/**
+	 * Returns the response body as a stream and writes it to the provided output stream.
+	 *
+	 * <p>This method is intended for downloading binary content such as files,
+	 * images, archives, or media streams.</p>
+	 *
+	 * <p>The download succeeds only when the HTTP response code is {@code 200}.
+	 * The provided output stream is flushed and closed automatically after the
+	 * download completes.</p>
+	 *
+	 * @param output destination stream
+	 *
+	 * @return {@code true} if the file was successfully downloaded and written,
+	 *         {@code false} otherwise
+	 */
+  public boolean downloadFile(OutputStream output)	{
+  	boolean complete = false;
+  	
+  	if(response != null && responseCode == 200)	{
+  		try(InputStream in = response.body().byteStream())	{
+  			int bufSize = 8*1024;
+  			byte[] buffer = new byte[bufSize];
+  			int bytesRead = -1;
+  			while((bytesRead = in.read(buffer)) != -1)	{
+  				output.write(buffer,0,bytesRead);
+  			}
+  			output.flush();
+  			output.close();
+
+  			complete = true;
+  		}catch(Exception e) {}
+  	}
+  	return complete;
+  }
 
   /**
    * Returns the underlying exception message if an exception occurred.
