@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://apache.org"
+         xmlns:xsi="http://w3.org"
+         xsi:schemaLocation="http://apache.org http://apache.org">
+    <modelVersion>4.0.0</modelVersion>
+
+    <name>serverresults</name>
+
+    <description>
+        Lightweight HTTP library
+    </description>
+    
+    <groupId>io.github.sifisofakude.serverresults</groupId>
+    <artifactId>serverresults</artifactId>
+    <packaging>jar</packaging>
+    <version>3.0.0</version>
+    
+    <dependencies>
+        <!-- Module dependencies go here -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.12.0</version>
+        </dependency>
+    </dependencies>
+    
+    <url>https://github.com/sifisofakude/serverresults</url>
+
+    <licenses>
+        <license>
+            <name>The MIT License</name>
+            <url>http://opensource.org/licenses/mit</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Sifiso Fakude</name>
+            <email>sifisofakude404@gmail.com</email>
+            <organization>Sifiso Fakude</organization>
+            <organizationUrl>https://github.com/sifisofakude/serverresults</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://://github.com/sifisofakude/serverresults.git</connection>
+        <developerConnection>scm:git:ssh://github.com:sifisofakude/serverresults.git</developerConnection>
+        <url>https://github.com/sifisofakude/serverresults.git</url>
+    </scm>
+</project>
