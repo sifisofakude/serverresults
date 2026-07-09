@@ -5,7 +5,10 @@
 build
 
 app/build
+<<<<<<< HEAD
 app/target
+=======
+>>>>>>> a3bf19d7d1e84ec570183c8ef97967af79fb4548
 
 commit_message.txt
 
